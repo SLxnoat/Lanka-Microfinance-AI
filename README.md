@@ -1,434 +1,259 @@
-# \# 💰 Lanka Micro-Finance AI
+# 💰 Lanka Micro-Finance AI
+### Alternative Credit Scoring for Sri Lankan Micro-Entrepreneurs
 
-# \### Alternative Credit Scoring for Sri Lankan Micro-Entrepreneurs
+> Bridging the financial inclusion gap through behavioral data science
 
-# 
+---
 
-# > Bridging the financial inclusion gap through behavioral data science
+## 1. Project Vision and Problem Statement
 
-# 
+In Sri Lanka, millions of street vendors, home-based workers, and freelancers are invisible to traditional banking systems. Not because they are untrustworthy, but simply because they do not have a formal CRIB credit record to present to a bank manager.
 
-# ---
+This project was built around one clear mission: to evaluate **creditworthiness** instead of just **credit history**. By reading behavioral signals from everyday digital and financial activity, this AI system gives micro-entrepreneurs a fair shot at accessing the loans they need to grow their businesses.
 
-# 
+---
 
-# \## 🌟 1. Project Vision \& Problem Statement
+## 2. The Data Strategy
 
-# 
+Traditional scoring models look at income statements and bank records. This system looks at **behavioral consistency** instead.
 
-# In Sri Lanka, millions of street vendors, home-based workers, and freelancers are \*\*invisible to traditional banking systems\*\* not because they are untrustworthy, but because they lack a formal CRIB credit record.
+The primary dataset (`lanka_microfinance_data.csv`, 1,000 records) was purpose-built for this prototype and captures five categories of alternative signals:
 
-# 
+| Signal Category | Feature | Why It Matters |
+|---|---|---|
+| Financial Hygiene | `Utility_Bill_Late_Days` | Late electricity or water payments reveal cash flow stress |
+| Cash Flow Proxy | `Mobile_Reload_Consistency` | Regular mobile top-ups signal steady disposable income |
+| Digital Adoption | `Digital_Literacy_Score` | Interaction speed and accuracy reflect financial engagement habits |
+| Social Capital | `Community_Group_Member` | Membership in Samurdhi, trade groups, or death-donation societies |
+| Anchor Variables | `Age`, `Monthly_Income_LKR`, `Existing_Loans`, `Dependents` | Traditional grounding features for context |
 
-# \*\*The Mission:\*\* Build a data-driven credit risk engine that evaluates \*creditworthiness\* instead of just \*credit history\*. By reading behavioral signals from everyday digital and financial activity, this system empowers the unbanked to access the microloans they need.
+### What the Primary Dataset (V1) Tells Us
 
-# 
+| Observation | Value |
+|---|---|
+| Overall default rate | 24.2% |
+| Default rate with 0 existing loans | 0.9% |
+| Default rate with 1 existing loan | 19.2% |
+| Default rate with 2 existing loans | 55.4% |
+| Default rate among community members | 23.2% |
+| Default rate among non-members | 25.6% |
+| Correlation of `Existing_Loans` with default | +0.51 (strongest predictor) |
+| Correlation of `Utility_Bill_Late_Days` with default | +0.36 |
+| Correlation of `Mobile_Reload_Consistency` with default | -0.39 |
 
-# ---
+The numbers tell a clear story. An applicant carrying two or more active loans is already in a structurally high-risk position, regardless of income level or business type. Mobile reload consistency shows a strong inverse relationship with default, confirming it as one of the most reliable behavioral proxies in this context.
 
-# 
+---
 
-# \## 🧬 2. The Data Strategy — Alternative Data Points
+## 3. EDA Highlights
 
-# 
+Three visualisations were produced during exploratory analysis to understand the distribution of the target variable and the separating power of the two strongest behavioral features.
 
-# Traditional models look at income statements. We look at \*\*behavioral consistency\*\*.  
+**Class Distribution**
 
-# Our dataset (`lanka\_microfinance\_data\_v2.csv`, 1,000 records) captures:
+![Loan Default vs Non-Default Count](https://github.com/SLxnoat/Lanka-Microfinance-AI/blob/main/images/Loan%20Default%20vs%20Non-Default%20Count.png)
 
-# 
+The dataset holds a 75.8% to 24.2% split between non-default and default cases, reflecting a realistic loan portfolio composition for a Sri Lankan micro-finance context.
 
-# | Signal | Feature | Rationale |
+**Mobile Reload Consistency vs Loan Default**
 
-# |---|---|---|
+![Mobile Reload Consistency vs Loan Default](https://github.com/SLxnoat/Lanka-Microfinance-AI/blob/main/images/Mobile%20Reload%20Consistency%20vs%20Loan%20Default.png)
 
-# | 💧 Financial Hygiene | `Utility\_Bill\_Late\_Days` | Late electricity/water payments reflect cash flow stress |
+Non-defaulters cluster clearly higher, with a median around 0.68, compared to 0.44 for defaulters. The overlap between distributions is intentional — this feature contributes meaningful signal without being a standalone predictor, which is the expected behavior of a genuine behavioral proxy.
 
-# | 📱 Cash Flow Proxy | `Mobile\_Reload\_Consistency` | Regular top-ups signal steady disposable income |
+---
 
-# | 🖥️ Digital Adoption | `Digital\_Literacy\_Score` | Interaction speed/accuracy as a proxy for financial engagement |
+## 4. Model Engineering
 
-# | 🤝 Social Capital | `Community\_Group\_Member` | Membership in trade groups, Samurdhi, or death-donation societies |
+The core prediction engine is an **XGBoost Classifier**, chosen for its strong performance on tabular data and its ability to capture non-linear relationships between features.
 
-# | 📊 Anchor Variables | `Age`, `Monthly\_Income\_LKR`, `Existing\_Loans`, `Dependents` | Grounding features for context |
+### Training Configuration
 
-# 
+The model was trained using an 80/20 train-test split with the following hyperparameters:
 
-# \### Key Dataset Insights (V2)
+```python
+XGBClassifier(
+    n_estimators=100,
+    learning_rate=0.1,
+    max_depth=5,
+    scale_pos_weight=3
+)
+```
 
-# 
+The `scale_pos_weight=3` parameter directly addresses class imbalance by applying a cost-sensitive weight to the minority class, calculated as:
 
-# | Observation | Value |
+$$scale\_pos\_weight = \frac{\text{Total Negative Samples}}{\text{Total Positive Samples}} \approx 3.0$$
 
-# |---|---|
+### Feature Importance by Gain
 
-# | Overall default rate | \*\*25.0%\*\* |
+| Rank | Feature | Gain Score |
+|---|---|---|
+| 1 | `Existing_Loans` | 19.55 |
+| 2 | `Mobile_Reload_Consistency` | 7.27 |
+| 3 | `Utility_Bill_Late_Days` | 5.73 |
+| 4 | `Monthly_Income_LKR` | 0.83 |
+| 5 | `Business_Type` | 0.53 |
+| 6 | `Dependents` | 0.51 |
+| 7 | `Age` | 0.40 |
+| 8 | `Digital_Literacy_Score` | 0.24 |
 
-# | Default rate — 0 existing loans | 1.1% |
+### Test Set Performance (V1 Dataset, 200 samples)
 
-# | Default rate — 1 existing loan | 22.2% |
+```
+              precision    recall  f1-score   support
 
-# | Default rate — 2 existing loans | \*\*72.2%\*\* |
+           0       0.98      0.98      0.98       161
+           1       0.90      0.90      0.90        39
 
-# | Default rate — 3 existing loans | \*\*96.4%\*\* |
+    accuracy                           0.96       200
+```
 
-# | Default rate — community members | 19.1% |
+```
+Confusion Matrix:
+[[157   4]
+ [  4  35]]
+```
 
-# | Default rate — non-members | 31.5% |
+The model achieves 96% accuracy with a balanced confusion matrix of 4 false negatives and 4 false positives on the test set.
 
-# | `Existing\_Loans` correlation with default | +0.68 (strongest predictor) |
+---
 
-# | `Utility\_Bill\_Late\_Days` correlation | +0.41 |
+## 5. Technical Reasoning and Trade-off Analysis
 
-# | `Mobile\_Reload\_Consistency` correlation | -0.18 |
+This section documents the key design decisions and debates that shaped the project, developed through iterative review across Claude and Gemini.
 
-# 
+---
 
-# ---
+### 5.1 V1 as a Research Prototype: A Deliberate Starting Point
 
-# 
+The primary dataset was built with a controlled, deterministic label structure:
 
-# \## 🛠️ 3. Model Engineering \& Optimisation
+```python
+score = (Utility_Bill_Late_Days * 0.4) - (Mobile_Reload_Consistency * 15) + (Existing_Loans * 5)
+Loan_Default = (score > 5)
+```
 
-# 
+This was a deliberate research choice. By anchoring the label to a known formula, the prototype was designed to first validate the full pipeline — data generation, model training, threshold analysis, and the Streamlit deployment — in a controlled, reproducible environment before introducing the complexity of real-world noise.
 
-# \*\*Core algorithm:\*\* XGBoost Classifier — selected for its superior performance on tabular data and ability to model non-linear feature interactions.
+The V1 model's 96% accuracy and ROC-AUC of 0.9996 are therefore understood as **upper-bound prototype benchmarks**, not real-world performance claims.
 
-# 
+---
 
-# \### Handling Class Imbalance
+### 5.2 V2 as a Realistic Extension
 
-# 
+The second dataset (`lanka_microfinance_data_v2.csv`) was developed as a natural evolution of the prototype. It replaces the deterministic label formula with a multi-factor weighted risk score plus Gaussian noise, and introduces realistic inter-feature correlations. For example, income is now inversely correlated with late days, and mobile reload consistency is tied to income level.
 
-# The dataset holds a realistic ~3:1 ratio of good to bad loans. To prevent the model from being biased toward the majority class, we applied \*\*cost-sensitive learning\*\* via the `scale\_pos\_weight` parameter:
+The result is a more honest prediction environment, where the model achieves 87% accuracy on the test set.
 
-# 
+| Metric | V1 Prototype | V2 Realistic Extension |
+|---|---|---|
+| Overall Accuracy | 96% | 87% |
+| Precision on High Risk | 90% | 75% |
+| Recall on Default Detection | 90% | 81% |
+| False Negatives | 4 | 11 |
+| False Positives | 4 | 15 |
+| `Income` correlation with default | +0.008 (noise) | -0.075 (realistic) |
+| `Community_Group_Member` correlation | -0.028 (weak) | -0.143 (meaningful) |
 
-# $$scale\\\_pos\\\_weight = \\frac{\\text{Total Negative Samples}}{\\text{Total Positive Samples}} = \\frac{750}{250} = 3.0$$
+The drop from 96% to 87% is not a regression. It is the expected cost of replacing a clean formula with real-world behavioral complexity, and it is the direction this project is headed.
 
-# 
+---
 
-# \### Feature Importance (by Gain)
+### 5.3 Threshold Strategy
 
-# 
+XGBoost defaults to a classification threshold of 0.5. Lowering it makes the model stricter about flagging applicants as high risk:
 
-# | Rank | Feature | Gain Score |
+| Threshold | False Negatives | False Positives | Business Impact |
+|---|---|---|---|
+| 0.3 | 4 | 7 | Over-rejects good applicants |
+| **0.4** | **4** | **5** | Recommended — balanced risk and revenue |
+| 0.5 | 4 | 4 | May miss borderline cases in noisier data |
 
-# |---|---|---|
+A threshold of 0.3 minimises missed defaults but causes too many creditworthy applicants to be turned away. Since a micro-finance business generates its revenue from loan interest, over-rejection directly damages sustainability. A threshold of 0.4 was selected as the practical balance between protecting the lender and keeping loan disbursement at a viable level.
 
-# | 1 | `Existing\_Loans` | 19.55 |
+---
 
-# | 2 | `Mobile\_Reload\_Consistency` | 7.27 |
+### 5.4 Repayment Intent vs Repayment Capacity
 
-# | 3 | `Utility\_Bill\_Late\_Days` | 5.73 |
+The `Community_Group_Member` feature was included under the assumption that members of Samurdhi, trade associations, or death-donation societies (මරණාධාර සමිති) face enough social pressure to honour their repayments. The V1 data shows a small directional gap: community members default at 23.2% versus 25.6% for non-members. The V2 extension widens this to 19.1% versus 31.5%, which is more meaningful.
 
-# | 4 | `Monthly\_Income\_LKR` | 0.83 |
+However, two concepts that are easy to conflate here are repayment intent and repayment capacity. Intent refers to the motivation to repay in order to protect social standing. Capacity refers to whether the applicant actually has the disposable income to make repayments on time. Samurdhi beneficiaries are by definition a lower-income population, which means their financial capacity is often most constrained precisely where their social intent is strongest.
 
-# | 5 | `Business\_Type` | 0.53 |
+Future iterations should treat these as separate signals by introducing derived features such as `loan_to_income_ratio` to represent capacity explicitly, rather than relying on community membership as a combined proxy.
 
-# | 6 | `Dependents` | 0.51 |
+---
 
-# | 7 | `Age` | 0.40 |
+## 6. Tech Stack and Project Structure
 
-# | 8 | `Digital\_Literacy\_Score` | 0.24 |
+| Layer | Technology |
+|---|---|
+| ML Engine | XGBoost |
+| Data Processing | Pandas, NumPy, Scikit-learn |
+| Web Interface | Streamlit |
+| Model Serialisation | Joblib |
 
-# 
+```
+lanka-microfinance-ai/
+│
+├── app.py                          # Streamlit prediction dashboard
+├── model_training.ipynb            # ML pipeline — train, evaluate, save
+├── eda_analysis.ipynb              # Exploratory data analysis
+├── data_generator.ipynb            # Synthetic dataset generation
+│
+├── data/
+│   ├── lanka_microfinance_data.csv       # V1 — primary prototype dataset
+│   ├── lanka_microfinance_data_v2.csv    # V2 — realistic extension dataset
+│   └── microfinance_model.pkl            # Serialised XGBoost model
+│
+└── requirements.txt
+```
 
-# \### Performance Evolution
+---
 
-# 
+## 7. Setup and Installation
 
-# | Metric | Synthetic Baseline (V1) | Realistic Scenario (V2) |
+Clone the repository:
 
-# |---|---|---|
+```bash
+git clone https://github.com/SLxnoat/Lanka-Microfinance-AI.git
+cd Lanka-Microfinance-AI
+```
 
-# | Overall Accuracy | 96% | \*\*87%\*\* |
+Install the required packages:
 
-# | Precision (High Risk) | 90% | 75% |
+```bash
+pip install -r requirements.txt
+```
 
-# | Recall (Default Detection) | 90% | 81% |
+Launch the prediction dashboard:
 
-# | ROC-AUC | 0.9996 | — |
+```bash
+streamlit run app.py
+```
 
-# | False Negatives (Missed Defaults) | 4 | 11 |
+The `microfinance_model.pkl` file must be placed inside the `data/` folder before running the app.
 
-# | False Positives (Wrong Rejections) | 4 | 15 |
+---
 
+## 8. Roadmap
 
+-  Integrate SHAP values to explain individual loan decisions to applicants and field officers
+-  Use precision-recall curves with Optuna to calibrate the classification threshold per lender risk profile
+-  Retrain the model on the V2 dataset and evaluate cross-validated performance
+-  Connect to telecom provider APIs for real-time mobile reload consistency data
+-  Run a fairness audit across business types, age groups, and income brackets
+-  Build derived interaction features such as `income_per_dependent` and `loan_to_income_ratio`
+-  Develop a lightweight React Native field app for offline data collection by loan officers
 
+---
 
+## Author
 
-# 
+**Mayura Bandara**  
+IT Undergraduate · ML Enthusiast · Founder of ArtXpert Design
 
-# > ⚠️ \*\*Note:\*\* The 96% V1 accuracy was an artefact of label leakage the model was reverse-engineering a deterministic formula, not learning real patterns. The \*\*87% V2 accuracy is the credible, honest baseline\*\*. See Section 4.1 for full explanation.
+[LinkedIn](https://www.linkedin.com/in/charuka-mayura)
 
-# 
+---
 
-# ---
-
-# 
-
-# \## 🧠 4. Deep Technical Reasoning — The Debate
-
-# 
-
-# ---
-
-# 
-
-# \### 4.1 The "Perfect Score" Problem — Why 96% Was a Red Flag
-
-# 
-
-# V1's near-perfect accuracy (96%, ROC-AUC 0.9996) looked impressive but was misleading. The target label was generated as a \*\*deterministic formula\*\* of only 3 features:
-
-# 
-
-# ```python
-
-# score = (Utility\_Bill\_Late\_Days \* 0.4) - (Mobile\_Reload\_Consistency \* 15) + (Existing\_Loans \* 5)
-
-# Loan\_Default = (score > 5)
-
-# ```
-
-# 
-
-# The model was not learning. It was memorising the formula. V2 corrects this by introducing Gaussian noise and multi-factor inter-feature correlations, making the prediction problem genuinely hard. The accuracy drop to 87% is \*\*intentional and desirable\*\*.
-
-# 
-
-# > In credit scoring, a near-perfect model is almost always a sign of \*\*data leakage\*\*; not genuine intelligence.
-
-# 
-
-# ---
-
-# 
-
-# \### 4.2 Threshold Strategy — Beyond the Default 0.5
-
-# 
-
-# The standard XGBoost classification threshold is `0.5`. Lowering it makes the model stricter about flagging risk:
-
-# 
-
-# | Threshold | False Negatives | False Positives | Business Impact |
-
-# |---|---|---|---|
-
-# | 0.3 | 4 | 7 | Too aggressive — over-rejects good applicants |
-
-# | \*\*0.4\*\* | \*\*4\*\* | \*\*5\*\* | ✅ Recommended — balanced risk \& revenue |
-
-# | 0.5 | 4 | 4 | May miss borderline risk in noisy real-world data |
-
-# 
-
-# \*\*Recommended: 0.4 Balanced Threshold\*\*
-
-# 
-
-# While a threshold of 0.3 minimises lender risk on paper, it causes too many creditworthy applicants to be rejected. Since a micro-finance business \*\*generates revenue from loan interest disbursement\*\*, over-rejection directly harms sustainability. The 0.4 threshold controls default risk without starving the business of loan volume.
-
-# 
-
-# ---
-
-# 
-
-# \### 4.3 Repayment Intent vs. Repayment Capacity
-
-# 
-
-# `Community\_Group\_Member` was designed under the assumption that members of Samurdhi, trade associations, or death-donation societies face \*\*social pressure to repay\*\*, making them lower risk. The V2 data supports this directionally — community members default at \*\*19.1%\*\* vs \*\*31.5%\*\* for non-members.
-
-# 
-
-# However, two distinct concepts must not be conflated:
-
-# 
-
-# \- ✅ \*\*Repayment Intent\*\* — wanting to repay to protect social standing
-
-# \- ⚠️ \*\*Repayment Capacity\*\* — actually having the income to repay
-
-# 
-
-# Samurdhi beneficiaries often belong to \*\*lower-income brackets\*\* — precisely where capacity is most constrained. Social pressure and financial ability are separate variables and the model must treat them independently.
-
-# 
-
-# \*\*Recommendation:\*\* Distinguish between \*formal registered groups\* (higher accountability) and \*informal community ties\*, and always pair social capital signals with income-capacity indicators such as `loan\_to\_income\_ratio`.
-
-# 
-
-# ---
-
-# 
-
-# \### 4.4 Dataset Scale — Prototype vs. Production
-
-# 
-
-# | Stage | Records Needed |
-
-# |---|---|
-
-# | Prototype / Demo | 1,000 (current) |
-
-# | Pilot Deployment | 5,000–10,000 |
-
-# | Production | 50,000+ with real repayment history |
-
-# 
-
-# At 1,000 records the model risks \*\*overfitting\*\* — memorising sample-specific patterns rather than generalising to the real applicant population. Cross-validation would likely reveal a lower true accuracy than the reported test scores.
-
-# 
-
-# ---
-
-# 
-
-# \## 💻 5. Tech Stack \& Project Structure
-
-# 
-
-# | Layer | Technology |
-
-# |---|---|
-
-# | ML Engine | XGBoost |
-
-# | Data Processing | Pandas, NumPy, Scikit-learn |
-
-# | Web Interface | Streamlit |
-
-# | Model Serialisation | Joblib |
-
-# 
-
-# ```
-
-# lanka-microfinance-ai/
-
-# │
-
-# ├── app.py                              # Streamlit prediction dashboard
-
-# ├── model\_training.ipynb                # ML pipeline — train / evaluate / save
-
-# ├── data\_generator.ipynb                # Realistic synthetic data generation
-
-# ├── eda\_analysis.ipynb                  # Exploratory data analysis
-
-# │
-
-# ├── data/
-
-# │   ├── lanka\_microfinance\_data.csv     # V1 — synthetic baseline dataset
-
-# │   ├── lanka\_microfinance\_data\_v2.csv  # V2 — realistic dataset with noise
-
-# │   └── microfinance\_model.pkl          # Serialised XGBoost model
-
-# │
-
-# └── requirements.txt
-
-# ```
-
-# 
-
-# ---
-
-# 
-
-# \## ⚙️ 6. Setup \& Installation
-
-# 
-
-# \*\*Clone the repository:\*\*
-
-# ```bash
-
-# git clone https://github.com/your-username/Lanka-Microfinance-AI.git
-
-# cd Lanka-Microfinance-AI
-
-# ```
-
-# 
-
-# \*\*Install dependencies:\*\*
-
-# ```bash
-
-# pip install -r requirements.txt
-
-# ```
-
-# 
-
-# \*\*Run the prediction dashboard:\*\*
-
-# ```bash
-
-# streamlit run app.py
-
-# ```
-
-# 
-
-# > Ensure `microfinance\_model.pkl` is placed inside the `data/` folder before running.
-
-# 
-
-# ---
-
-# 
-
-# \## 🚀 7. Roadmap \& Future Improvements
-
-# 
-
-# \- \*\*Explainable AI (XAI):\*\* Integrate SHAP values to explain \*why\* a loan was rejected — not just \*that\* it was
-
-# \- \*\*Threshold Calibration:\*\* Use precision-recall curves and Optuna Bayesian optimisation to fine-tune threshold per lender risk appetite
-
-# \- \*\*Real-time API Integration:\*\* Connect to telecom APIs for live mobile reload consistency data
-
-# \- \*\*Fairness Audit:\*\* Test for demographic bias across business types, age groups, and income brackets
-
-# \- \*\*Feature Engineering:\*\* Build interaction features — `income\_per\_dependent`, `loan\_to\_income\_ratio`, `late\_days\_per\_loan`
-
-# \- \*\*Mobile Field App:\*\* Lightweight React Native version for field officers collecting applicant data offline
-
-# 
-
-# ---
-
-# 
-
-# \## 👨‍💻 Author
-
-# 
-
-# \*\*Charuka Bandara\*\*  
-
-# IT Undergraduate · ML Enthusiast · Founder of ArtXpert Design
-
-# 
-
-# \[LinkedIn](#www.linkedin.com/in/charuka-mayura)
-
-# 
-
-# ---
-
-# 
-
-# > \*\*Disclaimer:\*\* This is a research prototype. Financial institutions must conduct rigorous stress testing, bias audits, and regulatory review before any real-world deployment.
-
+> **Disclaimer:** This is a research prototype. Financial institutions should conduct thorough stress testing, bias audits, and regulatory review before any production deployment.
